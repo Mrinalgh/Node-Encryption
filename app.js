@@ -6,8 +6,11 @@ const ejs=require("ejs");
 const express=require("express");
 const { appendFile } = require("fs");
 const mongoose=require("mongoose");
-const mongooseEncryption=require("mongoose-encryption");
+//const mongooseEncryption=require("mongoose-encryption");
 
+//const md5=require("md5");
+const bcrypt = require('bcrypt');
+const saltRounds = 10;
 
 
 const app =express();
@@ -26,8 +29,8 @@ var userSchema=new mongoose.Schema({
     password: String
 });
 
-console.log(process.env.SECRET);
-userSchema.plugin(mongooseEncryption, {secret: process.env.SECRET, encryptedFields: ["password"]});
+//console.log(process.env.SECRET);
+//userSchema.plugin(mongooseEncryption, {secret: process.env.SECRET, encryptedFields: ["password"]});
 
 const user= mongoose.model("User", userSchema);
 
@@ -53,21 +56,31 @@ app.post("/register", function(req,res)
     const userName=req.body.username;
     const password=req.body.password;
 
-    const newUser=new user({
-        email: userName,
-        password: password
-})
+    bcrypt.hash(password, saltRounds, function(err, hash) {
+        // Store hash in your password DB.
+        const newUser=new user({
+            email: userName,
+            password: hash
+        })
 
-newUser.save(function(err)
-{
-    if(err)
-    {
-        console.log("failed to store");
-    }
-    else{
-        res.render("secrets");
-    }
-})
+        newUser.save(function(err)
+        {
+            if(err)
+            {
+                console.log("failed to store");
+            }
+            else{
+                res.render("secrets");
+            }
+        })
+
+
+
+    });
+
+}); 
+
+
 
 app.post("/login", function(req,res)
 {
@@ -84,21 +97,22 @@ app.post("/login", function(req,res)
         else{
             if(foundData)
             {
-                if(foundData.password===password)
-                {
-                    res.render("secrets");
-                }
-                else{
-                    console.log("data doesn't match");
-                }
+                bcrypt.compare(password, foundData.password, function(err, result) {
+                    if(result===true)
+                    {
+                        res.render("secrets");
+                    }
+                    else{
+                        console.log("data doesn't match");
+                    }
+                });
+                
             }
         }
     })
 
 })
 
-
-})
 
 
 app.listen(3000, function()
