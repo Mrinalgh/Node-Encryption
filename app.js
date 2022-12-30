@@ -6,11 +6,11 @@ const ejs=require("ejs");
 const express=require("express");
 const { appendFile } = require("fs");
 const mongoose=require("mongoose");
-//const mongooseEncryption=require("mongoose-encryption");
 
-//const md5=require("md5");
-const bcrypt = require('bcrypt');
-const saltRounds = 10;
+const session=require("express-session");
+const passport=require("passport");
+const passportLocalMongoose=require("passport-local-mongoose");
+const { use } = require('passport');
 
 
 const app =express();
@@ -19,6 +19,16 @@ app.set("view engine", "ejs");
 
 app.use(express.static("public"));
 app.use(bodyParser.urlencoded({extended: true}));
+
+app.use(session({
+  secret: 'keyboard cat',
+  resave: false,
+  saveUninitialized: true,
+ // cookie: { secure: true }
+}));
+
+app.use(passport.initialize());
+app.use(passport.session());
 
 mongoose.set("strictQuery", false);
 mongoose.connect("mongodb://127.0.0.1:27017/userDB",{ useNewUrlParser: true});
@@ -29,10 +39,17 @@ var userSchema=new mongoose.Schema({
     password: String
 });
 
+userSchema.plugin(passportLocalMongoose);
+
 //console.log(process.env.SECRET);
 //userSchema.plugin(mongooseEncryption, {secret: process.env.SECRET, encryptedFields: ["password"]});
 
 const user= mongoose.model("User", userSchema);
+
+passport.use(user.createStrategy());
+
+passport.serializeUser(user.serializeUser());
+passport.deserializeUser(user.deserializeUser());
 
 
 app.get("/", function(req, res)
@@ -50,34 +67,35 @@ app.get("/register", function(req,res)
     res.render("register");
 })
 
+app.get("/secret", function(req,res)
+{
+    if(req.isAuthenticated())
+    {
+        res.render("secrets");
+    }
+    else{
+        res.redirect("/login");
+    }
+})
 
 app.post("/register", function(req,res)
 {
-    const userName=req.body.username;
-    const password=req.body.password;
 
-    bcrypt.hash(password, saltRounds, function(err, hash) {
-        // Store hash in your password DB.
-        const newUser=new user({
-            email: userName,
-            password: hash
-        })
-
-        newUser.save(function(err)
+    user.register({username: req.body.username}, req.body.password, function(err, user)
+    {
+        if(err)
         {
-            if(err)
+            console.log(err);
+            res.redirect("/register");
+        }
+        else{
+            passport.authenticate("local")(req,res, function()
             {
-                console.log("failed to store");
-            }
-            else{
-                res.render("secrets");
-            }
-        })
-
-
-
-    });
-
+                res.redirect("/secret");
+            })
+        }
+    })
+    
 }); 
 
 
@@ -85,32 +103,36 @@ app.post("/register", function(req,res)
 app.post("/login", function(req,res)
 {
 
-    const userName=req.body.username;
-    const password=req.body.password;
+    //dont get confuse here this is the mogoose.local.model which you used to register the user and then serialized
+    //if you change username to email deserialize will failed and your data will not match so login will failed
+    //if you see mongodb database see email and password will be blank only username which you created during register
+    //will have the data and same for password(used hashed one)
+    const userData= new user({
+        username: req.body.username,
+        password: req.body.password
+    });
 
-    user.findOne({email: userName}, function(err, foundData)
+    req.login(userData, function(err)
     {
         if(err)
         {
-            console.log("error in process");
+            console.log(err);
+            res.redirect("/login");
         }
         else{
-            if(foundData)
+            passport.authenticate("local")(req,res, function()
             {
-                bcrypt.compare(password, foundData.password, function(err, result) {
-                    if(result===true)
-                    {
-                        res.render("secrets");
-                    }
-                    else{
-                        console.log("data doesn't match");
-                    }
-                });
-                
-            }
+                res.redirect("/secret");
+            })
         }
     })
+    
+})
 
+app.get("/logout", function(req,res)
+{
+    req.logOut();
+    res.redirect("/");
 })
 
 
